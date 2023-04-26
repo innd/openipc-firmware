@@ -55,7 +55,9 @@ jobs:
           - rv1126
           - s3l
           - ssc335
+          - ssc338q
           - t31
+          - t40
           - xm510
           - xm530
 
@@ -193,6 +195,7 @@ jobs:
           - gk7202v300
           - gk7605v100
           - t31
+          - t40
         release:
           - lite
           - ultimate
@@ -209,6 +212,14 @@ jobs:
             release: fpv
           - platform: gk7205v300
             release: fpv
+          - platform: hi3516ev200
+            release: lte
+          - platform: hi3516ev300
+            release: lte
+          - platform: gk7205v200
+            release: lte
+          - platform: gk7205v300
+            release: lte
 
           # Original SDK test
           - platform: gk7205v200
@@ -238,11 +249,15 @@ jobs:
             release: lite
           - platform: ssc337de
             release: lite
+          - platform: ssc338q
+            release: lite
           - platform: t10
             release: lite
           - platform: t20
             release: lite
           - platform: t21
+            release: lite
+          - platform: t30
             release: lite
           - platform: xm510
             release: lite
@@ -263,10 +278,8 @@ jobs:
             custom: onlyci
           - platform: gk7102
             release: lite
-            custom: onlyci
           - platform: gk7102s
             release: lite
-            custom: onlyci
           - platform: msc313e
             release: lite
             custom: onlyci
@@ -465,20 +478,14 @@ jobs:
           if [ -f uImage ]; then
             # TODO: doesn't fit to lite
             case ${{ matrix.platform }} in
-              hi3516cv500|hi3516dv300|hi3516av300)
+              hi3516cv500|hi3516dv300|hi3516av300|ssc338q)
                 MAX_KERNEL_SIZE=${MAX_KERNEL_SIZE_ULTIMATE}
                 MAX_ROOTFS_SIZE=${MAX_ROOTFS_SIZE_ULTIMATE}
-              ;;
-              hi3516ev200|hi3516ev300)
-                if [[ "${{ matrix.release }}" == "fpv" ]]; then
-                  MAX_KERNEL_SIZE=${MAX_KERNEL_SIZE_ULTIMATE}
-                  MAX_ROOTFS_SIZE=${MAX_ROOTFS_SIZE_ULTIMATE}
-                fi
               ;;
             esac
 
             case ${{ matrix.release }} in
-              lite|fpv)
+              lite|fpv|lte)
                 check_exceeded uImage ${MAX_KERNEL_SIZE}
                 check_exceeded rootfs.squashfs ${MAX_ROOTFS_SIZE}
                 ;;

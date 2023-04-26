@@ -1,7 +1,7 @@
 #!/bin/sh
 
 KMOD_PATH=/lib/modules/3.10.14/ingenic
-SOC=$(ipcinfo --chip-name)
+SOC=$(ipcinfo --chip-name || fw_printenv -n soc)
 
 echo 1 >/proc/sys/vm/overcommit_memory
 
@@ -49,6 +49,10 @@ case ${SENSOR} in
     ISP_PARAM="isp_clk=90000000"
     SENSOR_PARAM=""
     ;;
+"sc2235")
+    ISP_PARAM="isp_clk=90000000"
+    SENSOR_PARAM=""
+    ;;
 *)
     ISP_PARAM="isp_clk=90000000"
     SENSOR_PARAM=""
@@ -76,7 +80,7 @@ fi
 
 lsmod | grep "audio" >/dev/null
 if [ $? -ne 0 ]; then
-    insmod ${KMOD_PATH/%\//}/audio.ko
+    insmod ${KMOD_PATH/%\//}/audio2.ko
     check_return "insmod audio"
 fi
 

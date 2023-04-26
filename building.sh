@@ -92,7 +92,7 @@ log_and_run() {
 
 clone() {
   sudo apt-get update -y
-  sudo apt-get install -y automake autotools-dev bc build-essential curl fzf git libtool rsync unzip
+  sudo apt-get install -y automake make wget cpio file autotools-dev bc build-essential curl fzf git libtool rsync unzip
   git clone --depth=1 https://github.com/OpenIPC/firmware.git
 }
 
@@ -139,7 +139,8 @@ fresh() {
   log_and_run "cp -rvf ${SRC_CACHE_DIR}/* buildroot-${BR_VER}/dl/"
   echo_c 34 "Done.\n"
 
-  make prepare
+  # prevent to double download buildroot
+  # make prepare
 
   echo_c 33 "Start building OpenIPC Firmware ${OPENIPC_VER} for ${SOC}."
   echo "The start-stop times" >/tmp/openipc_buildtime.txt
@@ -158,7 +159,7 @@ should_fit() {
 }
 
 rename() {
-  if grep -q ultimate_defconfig ./output/.config || grep -q fpv_defconfig ./output/.config; then
+  if grep -q ultimate_defconfig ./output/.config || grep -q sdcard_defconfig ./output/.config; then
     should_fit uImage $MAX_KERNEL_SIZE_ULTIMATE
     should_fit rootfs.squashfs $MAX_ROOTFS_SIZE_ULTIMATE
   else

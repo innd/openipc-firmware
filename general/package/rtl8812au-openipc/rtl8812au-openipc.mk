@@ -3,8 +3,7 @@
 # rtl8812au-openipc
 #
 ################################################################################
-
-RTL8812AU_OPENIPC_VERSION = 92433c4e9cf37ff67dd69df8ddbb32198ec3c6fd
+RTL8812AU_OPENIPC_VERSION = 3a57ac0a3ebd6d1f4ab9ef994a429c83df4b133a
 RTL8812AU_OPENIPC_SITE = $(call github,svpcom,rtl8812au,$(RTL8812AU_OPENIPC_VERSION))
 RTL8812AU_OPENIPC_LICENSE = GPL-2.0
 RTL8812AU_OPENIPC_LICENSE_FILES = COPYING
