@@ -4,8 +4,15 @@
 #
 ################################################################################
 
-QUIRC_OPENIPC_VERSION = 33251ce2005855392666fd8c7436d8c309a127d7
-QUIRC_OPENIPC_SITE = $(call github,cronyx,quirc,$(QUIRC_OPENIPC_VERSION))
+ifeq ($(LOCAL_DOWNLOAD),y)
+QUIRC_OPENIPC_SITE_METHOD = git
+QUIRC_OPENIPC_SITE = https://github.com/openipc/quirc
+QUIRC_OPENIPC_VERSION = $(shell git ls-remote $(QUIRC_OPENIPC_SITE) HEAD | head -1 | cut -f1)
+else
+QUIRC_OPENIPC_SITE = https://github.com/openipc/quirc/archive
+QUIRC_OPENIPC_SOURCE = master.tar.gz
+endif
+
 QUIRC_OPENIPC_DEPENDENCIES += libjpeg
 QUIRC_OPENIPC_LICENSE = ISC
 QUIRC_OPENIPC_LICENSE_FILES = LICENSE.txt

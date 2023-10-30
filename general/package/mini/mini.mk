@@ -4,22 +4,21 @@
 #
 ################################################################################
 
-MINI_VERSION = HEAD
-MINI_SITE = https://github.com/OpenIPC/mini.git
 MINI_SITE_METHOD = git
+MINI_SITE = https://github.com/openipc/mini
+MINI_VERSION = $(shell git ls-remote $(MINI_SITE) HEAD | head -1 | cut -f1)
+
 MINI_GIT_SUBMODULES = YES
 MINI_LICENSE = GPL-3.0
 MINI_LICENSE_FILES = LICENSE
 
-FAMILY := $(shell grep "/board/" $(BR2_CONFIG) | head -1 | cut -d "/" -f 3)
-
 ifeq ($(BR2_PACKAGE_HISILICON_OSDRV_HI3516CV200),y)
-	SDK_DIR := glutinium/hisi-osdrv2
+	MINI_SDK_DIR = glutinium/hisi-osdrv2
 else ifeq ($(BR2_PACKAGE_HISILICON_OSDRV_HI3516CV300),y)
-	SDK_DIR := glutinium/hisi-osdrv3
+	MINI_SDK_DIR = glutinium/hisi-osdrv3
 endif
 
-MINI_CONF_OPTS = -DPLATFORM_SDK_DIR=$(SDK_DIR)
+MINI_CONF_OPTS = -DPLATFORM_SDK_DIR=$(MINI_SDK_DIR)
 
 define MINI_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc

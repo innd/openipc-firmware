@@ -92,12 +92,12 @@ log_and_run() {
 
 clone() {
   sudo apt-get update -y
-  sudo apt-get install -y automake make wget cpio file autotools-dev bc build-essential curl fzf git libtool rsync unzip
+  sudo apt-get install -y automake make wget cpio file autotools-dev bc build-essential curl fzf git libtool rsync unzip libncurses-dev lzop
   git clone --depth=1 https://github.com/OpenIPC/firmware.git
 }
 
 fresh() {
-  BR_VER=$1
+  BR_VER=2023.02.1
 
   if [ -d "$SRC_CACHE_DIR" ]; then
     echo_c 36 "Found cache directory."
@@ -226,7 +226,7 @@ uni_build() {
   echo_c 33 "\n  SoC: $SOC\nBoard: $BOARD\n"
 
   if [ "all" = "${COMMAND}" ]; then
-    fresh $(make BOARD=${BOARD} buildroot-version)
+    fresh $(make BOARD=${BOARD})
   fi
 
   log_and_run "make BOARD=${BOARD} ${COMMAND}"

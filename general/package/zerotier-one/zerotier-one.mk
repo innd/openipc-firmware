@@ -4,8 +4,9 @@
 #
 ################################################################################
 
-ZEROTIER_ONE_VERSION = 1.10.4
+ZEROTIER_ONE_VERSION = 1.12.2
 ZEROTIER_ONE_SITE = $(call github,zerotier,ZeroTierOne,$(ZEROTIER_ONE_VERSION))
+
 ZEROTIER_ONE_LICENSE = BUSL-1.1
 ZEROTIER_ONE_LICENSE_FILES = LICENSE.txt
 
@@ -27,7 +28,7 @@ define ZEROTIER_ONE_INSTALL_TARGET_CMDS
 
 	if grep -q "BR2_PACKAGE_MICROBE_WEB=y" $(BR2_CONFIG); then \
 		$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/init.d ; \
-		cp ../general/package/zerotier-one/files/S90zerotier $(TARGET_DIR)/etc/init.d ; \
+		cp $(ZEROTIER_ONE_PKGDIR)/files/S90zerotier $(TARGET_DIR)/etc/init.d ; \
 	fi
 endef
 

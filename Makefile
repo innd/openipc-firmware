@@ -1,199 +1,115 @@
-ifneq ($(PLATFORM),)
-	PLATFORM := $(error Setting PLATFORM in make arguments is deprecated, please remove it)
-else
-	ifneq ($(BOARD),)
-		FULL_PATH := $(shell find br-ext-chip-* -name "$(BOARD)*_defconfig")
-		ifeq ($(FULL_PATH),)
-			FULL_PATH := $(error Cannot find anything for $(BOARD))
-		else ifneq ($(shell echo $(FULL_PATH) | wc -w), 1)
-			FULL_PATH := $(error For provided '$(BOARD)' multiple options found: $(FULL_PATH))
-		endif
+BR_VER = 2023.02.5
+BR_MAKE = $(MAKE) -C $(TARGET)/buildroot-$(BR_VER) BR2_EXTERNAL=$(PWD)/general O=$(TARGET)
+BR_LINK = https://github.com/buildroot/buildroot/archive
+BR_FILE = /tmp/buildroot-$(BR_VER).tar.gz
+TARGET ?= $(PWD)/output
 
-		PLATFORM := $(shell echo $(FULL_PATH) | cut -d '/' -f 1 | cut -d '-' -f 4 )
+CONFIG = $(error variable BOARD is not defined)
+TIMER := $(shell date +%s)
 
-		FAMILY := $(shell grep "/board/" $(FULL_PATH) | head -1 | cut -d "/" -f 3)
-		ifeq ($(FAMILY),hi3516cv500)
-			BR_VER ?= 2022.08
-		else ifeq ($(FAMILY),infinity6e)
-			BR_VER ?= 2023.02
-		endif
-	endif
+ifeq ($(MAKECMDGOALS),all)
+ifeq ($(BOARD),)
+LIST := $(shell find ./br-ext-*/configs/*_defconfig | sort | \
+	sed -E "s/br-ext-chip-(.+).configs.(.+)_defconfig/'\2' '\1 \2'/")
+BOARD := $(or $(shell whiptail --title "Available boards" --menu "Please select a board:" 20 76 12 \
+	--notags $(LIST) 3>&1 1>&2 2>&3),$(CONFIG))
+endif
 endif
 
-ROOT_DIR      := $(CURDIR)
-BR_EXT_DIR    := $(ROOT_DIR)/br-ext-chip-$(PLATFORM)
-SCRIPTS_DIR   := $(ROOT_DIR)/scripts
-
-BR_VER        ?= 2021.02.12
-BR_DIR        := $(ROOT_DIR)/buildroot-$(BR_VER)
-
-.PHONY: usage help clean distclean prepare install-deps all toolchain-params run-tests overlayed-rootfs-%
-
-usage help:
-	@printf "\n \
-	BR-OpenIPC usage:\n \
-	  - make help | usage - print this help\n \
-	  - make install-deps - install system deps\n \
-	  - make prepare - download and unpack buildroot\n \
-	  - make list-configs - show available hardware configs list\n \
-	  - make BOARD=<BOARD-ID> board-info - show information about\n \
-	  	  selected board\n \
-	  - make BOARD=<BOARD-ID> all - build all needed for a board\n \
-	  	  (toolchain, kernel and rootfs images)\n \
-	  - make clean - cleaning before reassembly\n \
-	  - make distclean - switching to the factory state\n \
-	  - make overlayed-rootfs-<FS-TYPE> ROOTFS_OVERLAYS=... - create rootfs\n \
-	  	  image that contains original Buildroot target dir overlayed\n \
-	  	  by some custom layers\n\n \
-	  Example:\n \
-	    make overlayed-rootfs-squashfs ROOTFS_OVERLAYS=./examples/echo_server/overlay\n\n"
-
-distclean:
-	@rm -rf output buildroot-$(BR_VER)
-
-clean:
-	@rm -rf output/target output/.config
-
-prepare: $(BR_DIR)
-$(ROOT_DIR)/buildroot-$(BR_VER).tar.gz:
-	wget -O $@ -nv \
-		--retry-connrefused --continue --timeout=3 \
-		http://buildroot.org/downloads/buildroot-$(BR_VER).tar.gz || \
-	wget -O $@ -nv \
-		--retry-connrefused --continue --timeout=3 \
-		https://github.com/buildroot/buildroot/archive/refs/tags/$(BR_VER).tar.gz
-
-$(BR_DIR): $(ROOT_DIR)/buildroot-$(BR_VER).tar.gz
-	tar -C $(ROOT_DIR) -xf buildroot-$(BR_VER).tar.gz
-	rm -f buildroot-$(BR_VER).tar.gz
-
-
-install-deps:
-ifneq ($(shell id -u), 0)
-	@echo "You must be root to perform this action."
-else
-	DEBIAN_FRONTEND=noninteractive apt-get update && \
-		apt-get -y install \
-		build-essential git make libncurses-dev wget curl \
-		cpio rsync bc unzip file lzop
+ifneq ($(BOARD),)
+CONFIG := $(shell find br-ext-*/configs/*_defconfig | grep -m1 $(BOARD))
+include $(CONFIG)
 endif
 
+help:
+	@printf "BR-OpenIPC usage:\n \
+	- make list - show available device configurations\n \
+	- make deps - install build dependencies\n \
+	- make clean - remove defconfig and target folder\n \
+	- make distclean - remove buildroot and output folder\n \
+	- make br-linux - build linux kernel only\n \
+	- make all - build the device firmware\n\n"
 
-%_info:
-	@echo
-	@cat $(BR_EXT_DIR)/board/$(subst _info,,$@)/config | grep RAM_LINUX_SIZE
-	$(eval VENDOR 	:= $(shell echo $@ | cut -d "_" -f 1))
-	$(eval FAMILY 	:= $(shell cat $(BR_EXT_DIR)/board/$(subst _info,,$@)/config | grep FAMILY | cut -d "=" -f 2))
-	$(eval CHIP	:= $(shell echo $@ | cut -d "_" -f 3))
-	@cat $(BR_EXT_DIR)/board/$(FAMILY)/$(CHIP).config
+all: build repack timer
 
-buildroot-version:
-	@echo $(BR_VER)
+build: defconfig
+	@$(BR_MAKE) all
 
-has-nand:
-	@sed -rn "s/^BR2_TARGET_ROOTFS_UBI=(y)/\1/p" $(FULL_PATH)
+br-%: defconfig
+	@$(BR_MAKE) $(subst br-,,$@)
+
+defconfig: prepare
+	@echo --- $(or $(CONFIG),$(error variable BOARD is not found))
+	@$(BR_MAKE) BR2_DEFCONFIG=$(PWD)/$(CONFIG) defconfig
+
+prepare:
+	@if test ! -e $(TARGET)/buildroot-$(BR_VER); then \
+		wget -c -q $(BR_LINK)/$(BR_VER).tar.gz -O $(BR_FILE); \
+		mkdir -p $(TARGET); tar -xf $(BR_FILE) -C $(TARGET); fi
 
 toolname:
-	@$(SCRIPTS_DIR)/show_toolchains.sh $(FULL_PATH) $(BR_VER)
+	@general/scripts/show_toolchains.sh $(CONFIG)
 
-list-configs:
-ifndef BOARD
-	$(error Variable BOARD must be defined to list configs)
+clean:
+	@rm -rf $(TARGET)/images $(TARGET)/target
+
+distclean:
+	@rm -rf $(BR_FILE) $(TARGET)
+
+list:
+	@ls -1 br-ext-chip-*/configs
+
+deps:
+	sudo apt-get install -y automake autotools-dev bc build-essential cpio \
+		curl file fzf git libncurses-dev libtool lzop make rsync unzip wget
+
+timer:
+	@echo - Build time: $(shell date -d @$(shell expr $(shell date +%s) - $(TIMER)) -u +%M:%S)
+
+repack:
+ifeq ($(BR2_TARGET_ROOTFS_SQUASHFS),y)
+ifeq ($(BR2_OPENIPC_FLASH_SIZE),"8")
+	@$(call PREPARE_REPACK,uImage,2048,rootfs.squashfs,5120,nor)
 else
-	@echo
-	@ls -1 $(BR_EXT_DIR)/configs
-	@echo
+	@$(call PREPARE_REPACK,uImage,2048,rootfs.squashfs,8192,nor)
+endif
+endif
+ifeq ($(BR2_TARGET_ROOTFS_UBI),y)
+ifeq ($(BR2_OPENIPC_SOC_VENDOR),"rockchip")
+	@$(call PREPARE_REPACK,zboot.img,4096,rootfs.ubi,16384,nand)
+else ifeq ($(BR2_OPENIPC_SOC_VENDOR),"sigmastar")
+	@$(call PREPARE_REPACK,,,rootfs.ubi,16384,nand)
+else
+	@$(call PREPARE_REPACK,uImage,4096,rootfs.ubi,16384,nand)
+endif
+endif
+ifeq ($(BR2_TARGET_ROOTFS_INITRAMFS),y)
+	@$(call PREPARE_REPACK,uImage,16384,,,initramfs)
 endif
 
-
-# -------------------------------------------------------------------------------------------------
-OUT_DIR ?= $(ROOT_DIR)/output
-
-# Buildroot considers relative paths relatively to its' own root directory. So we use absolute paths
-# to avoid ambiguity
-override OUT_DIR := $(abspath $(OUT_DIR))
-BOARD_MAKE := $(MAKE) -C $(BR_DIR) BR2_EXTERNAL=$(BR_EXT_DIR) O=$(OUT_DIR)
-
-define CREATE_TOOLCHAIN_PARAMS
-    eval $$($(BOARD_MAKE) -s --no-print-directory VARS=GNU_TARGET_NAME printvars) \
-    && $(SCRIPTS_DIR)/create_toolchain_binding.sh $(OUT_DIR)/host/bin $$GNU_TARGET_NAME \
-    > $(OUT_DIR)/toolchain-params.mk
+define PREPARE_REPACK
+	$(if $(1),$(call CHECK_SIZE,$(1),$(2)))
+	$(if $(3),$(call CHECK_SIZE,$(3),$(4)))
+	$(call REPACK_FIRMWARE,$(1),$(3),$(5))
 endef
 
-# -------------------------------------------------------------------------------------------------
-$(OUT_DIR)/.config:
-ifndef BOARD
-	$(error Variable BOARD must be defined to initialize output directory)
-else
-	$(BOARD_MAKE) BR2_DEFCONFIG=$(BR_EXT_DIR)/configs/$(BOARD)_defconfig defconfig
-endif
-
-
-$(OUT_DIR)/toolchain-params.mk: $(OUT_DIR)/.config $(SCRIPTS_DIR)/create_toolchain_binding.sh
-	$(CREATE_TOOLCHAIN_PARAMS)
-
-
-# TODO: Elaborate how to compile wireguard-linux-compat under GCC 12 without this patch
-define remove-patches
-	$(if $(filter $(BR_VER),2020.02.12 2021.02.12),-rm general/package/all-patches/wireguard-linux-compat/remove_fallthrough.patch)
+define CHECK_SIZE
+	$(eval FILE_SIZE = $(shell expr $(shell stat -c %s $(TARGET)/images/$(1) || echo 0) / 1024))
+	if test $(FILE_SIZE) -eq 0; then exit 1; fi
+	echo - $(1): [$(FILE_SIZE)KB/$(2)KB]
+	if test $(FILE_SIZE) -gt $(2); then \
+		echo -- size exceeded by: $(shell expr $(FILE_SIZE) - $(2))KB; exit 1; fi
 endef
 
-
-# -------------------------------------------------------------------------------------------------
-# build all needed for a board
-all: $(OUT_DIR)/.config $(OUT_DIR)/toolchain-params.mk
-	$(remove-patches)
-	$(BOARD_MAKE) all
-
-
-# -------------------------------------------------------------------------------------------------
-# re-create params file
-toolchain-params:
-	$(CREATE_TOOLCHAIN_PARAMS)
-
-# -------------------------------------------------------------------------------------------------
-# create rootfs image that contains original Buildroot target dir overlayed by some custom layers
-# space-separated list of overlays
-
-ROOTFS_OVERLAYS ?=
-# overlayed rootfs directory
-ROOTFS_OVERLAYED_DIR ?= $(OUT_DIR)/target-overlayed
-# overlayed rootfs image's name (without prefix)
-ROOTFS_OVERLAYED_IMAGE ?= rootfs-overlayed
-
-overlayed-rootfs-%: $(OUT_DIR)/.config
-	$(SCRIPTS_DIR)/create_overlayed_rootfs.sh $(ROOTFS_OVERLAYED_DIR) $(OUT_DIR)/target $(ROOTFS_OVERLAYS)
-	$(BOARD_MAKE) $(subst overlayed-,,$@) \
-	    BASE_TARGET_DIR=$(abspath $(ROOTFS_OVERLAYED_DIR)) \
-	    ROOTFS_$(call UPPERCASE,$(subst overlayed-rootfs-,,$@))_FINAL_IMAGE_NAME=$(ROOTFS_OVERLAYED_IMAGE).$(subst overlayed-rootfs-,,$@)
-
-
-# -------------------------------------------------------------------------------------------------
-board-info:
-	@cat $(BR_EXT_DIR)/board/$(BOARD)/config | grep RAM_LINUX_SIZE
-	$(eval VENDOR := $(shell echo $(BOARD) | cut -d "_" -f 1))
-	$(eval FAMILY := $(shell cat $(BR_EXT_DIR)/board/$(BOARD)/config | grep FAMILY | cut -d "=" -f 2))
-	$(eval CHIP   := $(shell echo $(BOARD) | cut -d "_" -f 3))
-	@cat $(BR_EXT_DIR)/board/$(FAMILY)/$(CHIP).config
-	@cat $(BR_EXT_DIR)/board/$(BOARD)/config
-
-# -------------------------------------------------------------------------------------------------
-# such targets (with trimmed `br-` prefix) are passed to Buildroot's Makefile
-br-%: $(OUT_DIR)/.config
-	$(remove-patches)
-	$(BOARD_MAKE) $(subst br-,,$@)
-
-
-# -------------------------------------------------------------------------------------------------
-run-tests:
-	$(MAKE) -C $(ROOT_DIR)/tests
-
-
-# -------------------------------------------------------------------------------------------------
-# there are some extra targets of specific packages
-include $(sort $(wildcard $(ROOT_DIR)/extra/*.mk))
-
-
-# -------------------------------------------------------------------------------------------------
-# util stuff is below
-UPPERCASE = $(shell echo $(1) | tr a-z A-Z)
+define REPACK_FIRMWARE
+	mkdir -p $(TARGET)/images/$(3)
+	$(if $(1),cd $(TARGET)/images/$(3) && cp -f ../$(1) $(1).$(BR2_OPENIPC_SOC_MODEL))
+	$(if $(2),cd $(TARGET)/images/$(3) && cp -f ../$(2) $(2).$(BR2_OPENIPC_SOC_MODEL))
+	$(if $(1),cd $(TARGET)/images/$(3) && md5sum $(1).$(BR2_OPENIPC_SOC_MODEL) > $(1).$(BR2_OPENIPC_SOC_MODEL).md5sum)
+	$(if $(2),cd $(TARGET)/images/$(3) && md5sum $(2).$(BR2_OPENIPC_SOC_MODEL) > $(2).$(BR2_OPENIPC_SOC_MODEL).md5sum)
+	$(if $(1),$(eval KERNEL = $(1).$(BR2_OPENIPC_SOC_MODEL) $(1).$(BR2_OPENIPC_SOC_MODEL).md5sum),$(eval KERNEL =))
+	$(if $(2),$(eval ROOTFS = $(2).$(BR2_OPENIPC_SOC_MODEL) $(2).$(BR2_OPENIPC_SOC_MODEL).md5sum),$(eval ROOTFS =))
+	$(eval ARCHIVE = ../openipc.$(BR2_OPENIPC_SOC_MODEL)-$(3)-$(BR2_OPENIPC_FLAVOR).tgz)
+	cd $(TARGET)/images/$(3) && tar -czf $(ARCHIVE) $(KERNEL) $(ROOTFS)
+	rm -rf $(TARGET)/images/$(3)
+endef

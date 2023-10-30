@@ -14,8 +14,7 @@ start() {
 	printf 'Starting %s: ' "$DAEMON"
 	[ -f /usr/sbin/$DAEMON ] || echo -en "DISABLED, "
 	# shellcheck disable=SC2086 # we need the word splitting
-	start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "/usr/sbin/$DAEMON" \
-		-- $CROND_ARGS
+	start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "/usr/sbin/$DAEMON" -- $CROND_ARGS
 	status=$?
 	if [ "$status" -eq 0 ]; then
 		echo "OK"
@@ -39,19 +38,19 @@ stop() {
 	return "$status"
 }
 
-restart() {
-	stop
-	sleep 1
-	start
-}
-
 case "$1" in
-	start|stop|restart)
-		"$1";;
-	reload)
-		# Restart, since there is no true "reload" feature.
-		restart;;
+	start|stop)
+		"$1"
+		;;
+
+	restart|reload)
+		stop
+		sleep 1
+		start
+		;;
+
 	*)
 		echo "Usage: $0 {start|stop|restart|reload}"
 		exit 1
+		;;
 esac

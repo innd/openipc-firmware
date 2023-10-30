@@ -1,15 +1,18 @@
 #!/bin/sh
 #
-# OpenIPC.org | v.20221118
+# OpenIPC.org | v.20231008
 #
 
-scr_version=1.0.16
+scr_version=1.0.21
 
 args=" $@"
 
 set -e
 
 LOCK_FILE=/tmp/sysupgrade.lock
+IPCINFO=/tmp/ipcinfo
+
+[ -f ${IPCINFO} ] && chmod +x ${IPCINFO} || IPCINFO=$(which ipcinfo)
 
 echo_c() {
 	# 31 red, 32 green, 33 yellow, 34 blue, 35 magenta, 36 cyan, 37 white, 38 grey
@@ -40,22 +43,22 @@ do_update_kernel() {
 	echo_c 33 "\nKernel"
 	echo "Update kernel from $x"
 	[ ! -f "$x" ] && die "File $x not found"
-  if [ "1" != "$skip_soc" ]; then
+	if [ "1" != "$skip_soc" ]; then
 		local ksoc=$(od -j 32 -N 32 -S 1 -A n "$x" | cut -d- -f3)
 		# FIXME: Ingenic kernels do not include proper SoC identifiers.
 		case "$soc" in
-		t31) [ "t" != "$ksoc" ] && die "Wrong SoC!" ;;
-		t21) [ "" != "$ksoc" ] && die "Wrong SoC!" ;;
-		*) check_soc "$ksoc"
+			t31) [ "t" != "$ksoc" ] && die "Wrong SoC!" ;;
+			t21) [ "" != "$ksoc" ] && die "Wrong SoC!" ;;
+			*) check_soc "$ksoc"
 		esac
 		compare_versions "$kernel_version" "$(get_kernel_version "$x")" && return 0
 	fi
-	flashcp -v "$x" "$kernel_device"
+	busybox flashcp -v "$x" "$kernel_device"
 	echo_c 32 "Kernel updated to $(get_kernel_version "$kernel_device")"
 }
 
 do_update_rootfs() {
-	local	x=$1
+	local x=$1
 	[ -z "$x" ] && x="/tmp/rootfs.squashfs.$soc"
 	echo_c 33 "\nRootFS"
 	echo "Update rootfs from $x"
@@ -63,29 +66,30 @@ do_update_rootfs() {
 	local y=/tmp/rootfs
 	if mkdir -p "$y" && loop=$(losetup -f) && losetup "$loop" "$x" && mount "$loop" "$y"; then
 		check_soc "$(head -1 ${y}/etc/hostname | cut -d- -f2)"
-		compare_versions "$system_version" "$(get_system_version "$y")" && return 0
+		compare_versions "$system_version" "$(get_system_version "$y")" && exit_update=1
 		umount "$y" && rm -rf "$y" && losetup -d "$loop"
+		[ "1" = "$exit_update" ] && return 0
 	else
 		die "Unable to mount $y!"
 	fi
-
-	flashcp -v "$x" "$(get_device "rootfs")"
+	busybox flashcp -v "$x" "$(get_device "rootfs")"
 	echo_c 32 "RootFS updated to $(get_system_version "")"
 }
 
 do_wipe_overlay() {
 	echo_c 33 "\nOverlayFS"
 	echo "Erase overlay partition"
-	flash_eraseall -j "$(get_device "rootfs_data")"
+	[ "$flash_type" = "nand" ] || jffs2="-j"
+	busybox flash_eraseall $jffs2 "$(get_device "rootfs_data")"
 }
 
 download_firmware() {
 	echo_c 33 "\nFirmware"
+	[ "$branch_dev" = "1" ] && branch="dev" || branch="latest"
 	osr=$(get_system_build)
-	ftype=$(ipcinfo -F 2>/dev/null)
-	[ ${#ftype} -gt 4 ] && ftype=$(get_flash_type)
+	ftype="nor"
 	build="${soc}-${ftype}-${osr}"
-	[ -z "$url" ] && url="https://github.com/OpenIPC/firmware/releases/download/latest/openipc.${build}.tgz"
+	[ -z "$url" ] && url="https://github.com/OpenIPC/firmware/releases/download/${branch}/openipc.${build}.tgz"
 	echo "Download from $url"
 	[ -z "$HASERLVER" ] && progress="-#" || progress="-s"
 	[ "$(curl -o /dev/null -s -w '%{http_code}\n' "$url")" = "000" ] && die "Check your network!"
@@ -189,11 +193,12 @@ get_kernel_version() {
 }
 
 get_system_info() {
-	vendor=$(ipcinfo --vendor)
+	vendor=$(${IPCINFO} -v)
 	soc=$(fw_printenv -n soc) || die "SoC is not defined in U-Boot environment"
 	kernel_device=$(get_device "kernel")
 	kernel_version=$(get_kernel_version "$kernel_device")
 	system_version=$(get_system_version "")
+	flash_type=$(${IPCINFO} -F)
 }
 
 get_system_version() {
@@ -202,12 +207,6 @@ get_system_version() {
 
 get_system_build() {
 	grep "BUILD_OPTION" "/etc/os-release" | head -1 | cut -d= -f2
-}
-
-# This flash type detection is deprecated and will be removed in the next updates...
-get_flash_type() {
-  has_nand=$(fw_printenv bootcmd | grep nand | wc -l)
-  [ "1" = "$has_nand" ] && echo "nand" || echo "nor"
 }
 
 print_sysinfo() {
@@ -223,6 +222,7 @@ Where:
   -k                   Update kernel from online repository.
   -r                   Update rootfs from online repository.
   -w                   Update Web UI to development version.
+  -d                   Update firmware from development branch.
       --url=[URL]      Custom URL to update from (.tgz format).
       --kernel=[FILE]  Update kernel from file (uImage format).
       --rootfs=[FILE]  Update rootfs from file (squashfs format).
@@ -246,7 +246,7 @@ reboot_system() {
 		exit 1
 	else
 		echo_c 37 "\nUnconditional reboot"
-		reboot -d 1 -f
+		busybox reboot -d 1 -f
 	fi
 }
 
@@ -258,65 +258,84 @@ for i in "$@"; do
 			skip_ver=1
 			shift
 			;;
+
 		--force_md5)
 			skip_md5=1
 			shift
 			;;
+
 		--force_soc)
 			skip_soc=1
 			shift
 			;;
+
 		--force_ver)
 			skip_ver=1
 			shift
 			;;
+
+		-d)
+			branch_dev=1
+			shift
+			;;
+
 		-h | --help)
 			print_sysinfo
 			print_usage
 			exit 0
 			;;
+
 		-k)
 			update_kernel=1
 			remote_update=1
 			shift
 			;;
+
 		--kernel=*)
 			update_kernel=1
 			kernel_file="${i#*=}"
 			[ "$kernel_file" != ${kernel_file#/mnt/mmc} ] && skip_unmount=1
 			shift
 			;;
+
 		-n | --wipe_overlay)
 			clear_overlay=1
 			shift
 			;;
+
 		-r)
 			update_rootfs=1
 			remote_update=1
 			shift
 			;;
+
 		--rootfs=*)
 			update_rootfs=1
 			rootfs_file="${i#*=}"
 			[ "$rootfs_file" != ${rootfs_file#/mnt/mmc} ] && skip_unmount=1
 			shift
 			;;
+
 		--url=*)
 			url="${i#*=}"
 			shift
 			;;
-		-x | --no_reboot)
-			skip_reboot=1
-			shift
-			;;
+
 		-w)
 			update_webui=1
 			shift
 			;;
+
+		-x | --no_reboot)
+			skip_reboot=1
+			shift
+			;;
+
 		-z | --no_update)
 			skip_selfupdate=1
 			shift
 			;;
+
 		*)
 			print_sysinfo
 			echo_c 37 "\nUnknown option: $1"
@@ -346,11 +365,10 @@ if [ "1" = "$update_webui" ]; then
 	fi
 fi
 
-[ "1" != "$skip_unmount" ] && check_sdcard
-
 create_lock
 free_resources
 
+[ "1" != "$skip_unmount" ] && check_sdcard
 [ "1" = "$remote_update" ] && download_firmware
 [ "1" = "$update_kernel" ] && do_update_kernel "$kernel_file"
 [ "1" = "$update_rootfs" ] && do_update_rootfs "$rootfs_file"

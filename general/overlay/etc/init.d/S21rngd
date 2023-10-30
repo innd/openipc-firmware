@@ -31,16 +31,15 @@ stop()
 }
 
 case "$1" in
-	start)
-		start
+	start|stop)
+		"$1"
 		;;
-	stop)
-		stop
-		;;
+
 	restart|reload)
 		stop
 		start
 		;;
+
 	*)
 		echo "Usage: $0 {start|stop|restart|reload}" >&2
 		exit 1

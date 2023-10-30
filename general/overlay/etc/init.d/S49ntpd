@@ -13,8 +13,7 @@ NTPD_ARGS="-n"
 start() {
 	printf 'Starting %s: ' "$DAEMON"
 	# shellcheck disable=SC2086 # we need the word splitting
-	start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "/usr/sbin/$DAEMON" \
-		-- $NTPD_ARGS
+	start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "/usr/sbin/$DAEMON" -- $NTPD_ARGS
 	status=$?
 	if [ "$status" -eq 0 ]; then
 		echo "OK"
@@ -30,6 +29,7 @@ stop() {
 	status=$?
 	if [ "$status" -eq 0 ]; then
 		rm -f "$PIDFILE"
+		ntpd -q -N -n -d
 		echo "OK"
 	else
 		echo "FAIL"
@@ -37,19 +37,19 @@ stop() {
 	return "$status"
 }
 
-restart() {
-	stop
-	sleep 1
-	start
-}
-
 case "$1" in
-	start|stop|restart)
-		"$1";;
+	start|stop)
+		"$1"
+		;;
+
 	reload)
-		# Restart, since there is no true "reload" feature.
-		restart;;
+		stop
+		sleep 1
+		start
+		;;
+
 	*)
 		echo "Usage: $0 {start|stop|restart|reload}"
 		exit 1
+		;;
 esac
